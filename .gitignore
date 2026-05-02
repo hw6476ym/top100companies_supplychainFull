@@ -17,3 +17,7 @@ desktop.ini
 
 # Claude harness (keep launch.json out of public repo)
 .claude/
+
+# Unrelated Python sandbox files (kept local, not in repo)
+First_try.py
+sample_data.csv
