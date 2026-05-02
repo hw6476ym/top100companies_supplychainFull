@@ -1,0 +1,1361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mag 7 Supply Chain Explorer — Deep Map</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root{
+    --bg:#0a0f1f; --panel:#101831; --panel2:#0c1326; --line:#22304f;
+    --text:#e7ecf5; --muted:#9aa7c2; --accent:#7cc4ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden}
+  #app{display:grid;grid-template-columns:300px 1fr 420px;grid-template-rows:auto 1fr;height:100vh}
+  header{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:10px 16px;
+    border-bottom:1px solid var(--line);background:var(--panel2);z-index:10}
+  header strong{font-size:17px}
+  header .sub{color:var(--muted);font-size:12px}
+  aside{background:var(--panel);overflow:auto;padding:14px}
+  aside.left{border-right:1px solid var(--line)}
+  aside.right{border-left:1px solid var(--line)}
+  main{position:relative;overflow:hidden;background:radial-gradient(1400px 900px at 50% 50%,#162244 0%,#0a0f1f 70%)}
+  svg{width:100%;height:100%;display:block;cursor:grab}
+  svg:active{cursor:grabbing}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:14px 0 6px}
+  h3{margin:0 0 4px;font-size:18px;line-height:1.25}
+  input[type=search]{width:100%;background:#0d1428;border:1px solid var(--line);
+    color:var(--text);padding:8px 10px;border-radius:8px;font-size:13px;outline:none}
+  input[type=search]:focus{border-color:var(--accent)}
+  .controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .controls button{flex:1;background:#0d1428;border:1px solid var(--line);color:var(--text);
+    padding:6px 8px;font-size:12px;border-radius:6px;cursor:pointer}
+  .controls button:hover{background:#182441}
+  .controls button.active{background:#1c2a4d;border-color:#3457a3;color:#cfe1ff}
+  .legend{display:flex;flex-direction:column;gap:5px}
+  .legend label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer;
+    padding:3px 6px;border-radius:5px}
+  .legend label:hover{background:#182441}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .companies button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    background:transparent;border:1px solid transparent;color:var(--text);
+    padding:7px 10px;border-radius:7px;cursor:pointer;font-size:13px;margin-bottom:2px}
+  .companies button:hover{background:#182441;border-color:var(--line)}
+  .companies button.active{background:#1c2a4d;border-color:#3457a3}
+  .companies .swatch{width:8px;height:22px;border-radius:3px;background:#ff5b6e}
+  .detail .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;
+    background:#1c2a4d;color:var(--accent);margin:0 4px 4px 0}
+  .detail .tag.warn{background:#3a1f1f;color:#ff9aa2}
+  .detail .tag.flag{background:#2c2a16;color:#ffd166}
+  .detail p{color:#cfd6e6;font-size:13px;line-height:1.55;margin:8px 0}
+  .kv{display:grid;grid-template-columns:90px 1fr;gap:5px 10px;font-size:12px;margin:8px 0}
+  .kv .k{color:var(--muted)} .kv .v{color:var(--text)}
+  .links-list{list-style:none;padding:0;margin:6px 0 0;max-height:260px;overflow:auto}
+  .links-list li{padding:6px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:4px;
+    font-size:12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .links-list li:hover{background:#182441;border-color:#3457a3}
+  .links-list .arrow{color:var(--muted);font-size:11px}
+  .empty{color:var(--muted);font-size:13px;padding:20px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+  .tooltip{position:absolute;pointer-events:none;background:#0a1126;border:1px solid var(--line);
+    color:var(--text);padding:6px 10px;font-size:12px;border-radius:6px;opacity:0;transition:opacity .12s;
+    max-width:260px;line-height:1.4;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,.4)}
+  .breadcrumb{font-size:11px;color:var(--muted);margin-top:6px;padding:6px 8px;background:#0d1428;border-radius:6px;border:1px solid var(--line)}
+  .src-note{font-size:11px;color:var(--muted);margin-top:14px;line-height:1.5;border-top:1px solid var(--line);padding-top:10px}
+  .node-label{font-size:9.5px;fill:#dfe6f5;pointer-events:none;text-shadow:0 1px 2px #000;font-weight:500}
+  .tier-label{font-size:11px;fill:#7088aa;text-anchor:middle;font-weight:600;letter-spacing:1px;text-transform:uppercase}
+  .tier-bg{fill:rgba(255,255,255,.015)}
+  .link{stroke:#3a4b73;stroke-opacity:.35;fill:none}
+  .link.hot{stroke:#7cc4ff;stroke-opacity:.95;stroke-width:1.6}
+  .node{cursor:pointer}
+  .node circle{stroke:#0a0f1f;stroke-width:1.5}
+  .node.dim circle{opacity:.12}
+  .node.dim text{opacity:.12}
+  .link.dim{stroke-opacity:.04}
+  .help{position:absolute;left:14px;bottom:14px;font-size:11px;color:var(--muted);
+    background:rgba(10,17,38,.8);border:1px solid var(--line);padding:6px 10px;border-radius:6px}
+  .badge{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;margin-right:4px;font-weight:600}
+  .badge.choke{background:#3a1f1f;color:#ff9aa2}
+  .badge.geo{background:#2c2a16;color:#ffd166}
+  .badge.china{background:#2a1834;color:#d99cff}
+  .stat{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px;padding:4px 8px;background:#0d1428;border-radius:5px}
+  .toolbar{position:absolute;top:14px;right:14px;display:flex;gap:6px;background:rgba(10,17,38,.85);
+    border:1px solid var(--line);padding:6px;border-radius:8px}
+  .toolbar button{background:transparent;border:1px solid var(--line);color:var(--text);
+    padding:5px 9px;font-size:11px;border-radius:5px;cursor:pointer}
+  .toolbar button:hover{background:#182441}
+  .legend-mini{position:absolute;left:14px;top:14px;background:rgba(10,17,38,.85);border:1px solid var(--line);
+    padding:8px 10px;border-radius:8px;font-size:10px;color:var(--muted);max-width:180px}
+  .focus-banner{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+    background:rgba(28,42,77,.95);border:1px solid #3457a3;color:#cfe1ff;
+    padding:6px 14px;border-radius:18px;font-size:12px;display:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <strong>Mag 7 Supply Chain Explorer — Deep Map</strong>
+    <span class="sub">Companies → Products → Assembly → Components → Fabs/Plants → Materials → Refineries → Mines</span>
+    <span style="margin-left:auto" class="sub">Click any node to trace its full chain</span>
+  </header>
+
+  <aside class="left">
+    <h2>Search</h2>
+    <input id="search" type="search" placeholder="Try: TSMC, Kolwezi, HBM, Tesla...">
+    <div class="controls">
+      <button id="resetBtn">Reset View</button>
+      <button id="clearBtn">Clear Focus</button>
+    </div>
+
+    <h2>Tiers (toggle visibility)</h2>
+    <div class="legend" id="legend"></div>
+
+    <h2>Companies</h2>
+    <div class="companies" id="companies"></div>
+
+    <h2>Chokepoints</h2>
+    <div class="legend" id="chokes"></div>
+
+    <div class="src-note">
+      <strong>About this map.</strong> Every node here is a real company, factory, refinery, mine,
+      or material. Capacities and ownership reflect publicly disclosed figures from filings,
+      USGS, IEA, BloombergNEF, S&amp;P Commodity Insights, and trade press through 2025.
+      Supply networks shift quarterly — treat this as a teaching map. Click any node and read
+      the right panel for full context. ⚠ marks single-source / chokepoint dependencies.
+    </div>
+  </aside>
+
+  <main>
+    <svg id="graph"></svg>
+    <div class="tooltip" id="tip"></div>
+    <div class="legend-mini">
+      <strong style="color:#dfe6f5">How to read this map</strong><br>
+      Flow runs <b>left → right</b>: a company at the left is built from products → assembly plants → components → fabs/cell-makers → refined materials → refineries → mines on the right. Click anything to follow the chain in either direction.
+    </div>
+    <div class="toolbar">
+      <button id="fitBtn">Fit View</button>
+      <button id="zoomIn">+</button>
+      <button id="zoomOut">−</button>
+    </div>
+    <div class="focus-banner" id="banner"></div>
+    <div class="help">Drag nodes • Scroll = zoom • Click node = trace chain • Click background = clear</div>
+  </main>
+
+  <aside class="right">
+    <div id="detail" class="detail">
+      <div class="empty">Click any node to see its full story:<br>what it is, who owns it, capacity, where it sits in the chain, and every Mag 7 product it ultimately reaches.</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+/* ============================================================================
+   TIER DEFINITIONS
+   ============================================================================ */
+const tiers = {
+  1:{name:"Company",         color:"#ff5b6e", r:24, x:-1300},
+  2:{name:"Product",         color:"#ff8a4d", r:14, x:-950},
+  3:{name:"Assembly Plant",  color:"#ffb74d", r:11, x:-600},
+  4:{name:"Component / Module", color:"#ffe26a", r:10, x:-250},
+  5:{name:"Specialty Fab / Plant", color:"#a8e26a", r:11, x:120},
+  6:{name:"Refined Material",color:"#7ad17a", r:9,  x:480},
+  7:{name:"Refinery / Smelter", color:"#5fc7c4", r:10, x:830},
+  8:{name:"Mine / Raw Source", color:"#7cc4ff", r:12, x:1190},
+};
+
+/* ============================================================================
+   DATA — Every node is a real entity. Descriptions are written from public
+   sources for educational use.
+   ============================================================================ */
+const N = []; const L = [];
+function n(id,label,tier,info={}){ N.push({id,label,tier,...info}); return id }
+function l(s,t){ L.push({source:s,target:t}); }
+
+/* ----------------------------------------------------------------------------
+   TIER 1: THE MAG 7
+---------------------------------------------------------------------------- */
+n("apple","Apple",1,{
+  hq:"Cupertino, California",
+  capacity:"~$391B FY24 revenue",
+  owner:"NASDAQ: AAPL",
+  desc:"World's most valuable consumer-electronics company. Designs silicon (A-series, M-series) in California; outsources nearly all manufacturing to contract assemblers in China, Vietnam, India. Apple has no factories of its own at scale — its leverage comes from controlling the design, the OS, and the bill-of-materials.",
+  notes:"~190 final-assembly suppliers across 50 countries; the top 200 suppliers account for ~98% of Apple's direct spend on materials, manufacturing, and assembly."
+});
+n("msft","Microsoft",1,{
+  hq:"Redmond, Washington",
+  capacity:"~$245B FY24 revenue",
+  desc:"Software-and-cloud first. Hardware is secondary (Surface, Xbox), but Azure is now one of the world's three largest cloud fleets and the second-largest buyer of Nvidia GPUs after Meta. Microsoft is co-designing custom silicon (Maia 100, Cobalt 100) to reduce its Nvidia dependency.",
+  notes:"Plans to spend ~$80B on AI data centers in 2025 alone."
+});
+n("googl","Alphabet",1,{
+  hq:"Mountain View, California",
+  capacity:"~$307B FY23 revenue",
+  desc:"Search and ads fund massive infrastructure: custom TPU AI chips (now v5p), one of the world's largest server fleets, Pixel hardware, Nest, and Waymo robotaxi. Google was the first hyperscaler to design its own AI silicon (TPU v1 in 2015).",
+  notes:"Buys roughly 1M servers/year. TPU v5p clusters now exceed Nvidia H100 buildouts at Google."
+});
+n("amzn","Amazon",1,{
+  hq:"Seattle, Washington",
+  capacity:"~$575B FY23 revenue",
+  desc:"AWS contributes ~70% of operating profit. Amazon designs Graviton (ARM CPU), Trainium and Inferentia (AI), and the Project Kuiper satellite constellation. Echo / Kindle / Fire are the visible consumer slice.",
+  notes:"Operates ~100 data-center campuses; Kuiper plans 3,236 LEO satellites."
+});
+n("meta","Meta",1,{
+  hq:"Menlo Park, California",
+  capacity:"~$135B FY23 revenue",
+  desc:"Social platforms (Facebook, Instagram, WhatsApp) plus Reality Labs (Quest VR, Ray-Ban Meta) and a massive AI-infrastructure push. Will operate ~600,000 H100-equivalent GPUs by end-2024.",
+  notes:"MTIA is Meta's in-house AI accelerator; Llama models trained on Meta's H100 fleet."
+});
+n("nvda","Nvidia",1,{
+  hq:"Santa Clara, California",
+  capacity:"~$60B FY24 / ~$130B FY25 revenue",
+  desc:"Designs the GPUs that train almost every major AI model. Fabless — every chip is manufactured at TSMC. ~88% gross margins on data-center GPUs. Single biggest beneficiary of the AI capex cycle.",
+  notes:"Currently the world's most valuable semiconductor company by market cap."
+});
+n("tsla","Tesla",1,{
+  hq:"Austin, Texas",
+  capacity:"~$97B FY23 revenue, ~1.8M vehicles delivered",
+  desc:"Most vertically integrated of the Mag 7. Tesla designs and manufactures its own motors, inverters, battery packs (and increasingly its own 4680 cells), Autopilot/AI silicon, and Dojo training computers. Operates 6 vehicle Gigafactories.",
+  notes:"The only Mag 7 company that runs its own foundries (cell production at Giga Nevada and Giga Texas)."
+});
+
+/* ----------------------------------------------------------------------------
+   TIER 2: PRODUCTS
+---------------------------------------------------------------------------- */
+// Apple
+n("p_iphone","iPhone 16 Pro",2,{owner:"Apple",capacity:"~232M iPhones/yr",desc:"Apple's flagship. ~52% of revenue. ~1,500 components per device, sourced from ~40 countries. Final assembly in Zhengzhou (China), increasingly Chennai (India) for diversification."});
+n("p_macbook","MacBook Pro (M4)",2,{owner:"Apple",capacity:"~22M Macs/yr",desc:"Built on Apple Silicon (3nm at TSMC). Final assembly Quanta/Foxconn Shanghai."});
+n("p_ipad","iPad Pro (M4)",2,{owner:"Apple",capacity:"~57M units/yr",desc:"First Apple device to ship with tandem OLED."});
+n("p_watch","Apple Watch Series 10",2,{owner:"Apple",capacity:"~40M units/yr"});
+n("p_airpods","AirPods Pro 2",2,{owner:"Apple",capacity:"~75M units/yr",desc:"~85% assembled by Luxshare and GoerTek."});
+n("p_vision","Vision Pro",2,{owner:"Apple",capacity:"~400k units/yr",desc:"Mixed-reality headset. ~3,500 components. Two Sony micro-OLED panels at 23M pixels each."});
+
+// Microsoft
+n("p_surface","Surface laptops + tablets",2,{owner:"Microsoft",capacity:"~6M units/yr"});
+n("p_xbox","Xbox Series X | S",2,{owner:"Microsoft",capacity:"~10M units/yr",desc:"Custom AMD Zen 2 + RDNA 2 SoC; assembled by Foxconn and Pegatron."});
+n("p_azure","Azure data-center rack",2,{owner:"Microsoft",capacity:"~5M+ servers operational",desc:"Hyperscale cloud fleet. AI training clusters at sites in Iowa, Quincy WA, Phoenix AZ, Dublin, and São Paulo. Largely built by Wiwynn and Quanta to Microsoft's OCP-style spec."});
+n("p_hololens","HoloLens 2",2,{owner:"Microsoft",capacity:"low-volume"});
+n("p_maia","Microsoft Maia 100",2,{owner:"Microsoft",capacity:"first deployments 2024–25",desc:"Microsoft's first in-house AI accelerator. Built on TSMC 5nm with HBM2e."});
+
+// Alphabet
+n("p_pixel","Pixel 9 Pro",2,{owner:"Google",capacity:"~10M units/yr",desc:"Google Tensor G4 SoC. Final assembly diversified to Vietnam (Foxconn) and India."});
+n("p_pbuds","Pixel Buds + Nest",2,{owner:"Google"});
+n("p_tpu","Google TPU v5p",2,{owner:"Google",capacity:"~hundreds of thousands deployed",desc:"Custom AI accelerator. Designed in Mountain View, fabbed at TSMC N5, packaged with HBM3 via CoWoS."});
+n("p_waymo","Waymo Driver (I-Pace, Zeekr RT)",2,{owner:"Waymo / Alphabet",capacity:"~700+ vehicles in fleet",desc:"Lidar/radar/camera stack on a Jaguar I-Pace base; transitioning to Geely Zeekr RT platform."});
+
+// Amazon
+n("p_echo","Echo + Fire devices",2,{owner:"Amazon",capacity:"~30M Echo/yr"});
+n("p_kindle","Kindle e-readers",2,{owner:"Amazon"});
+n("p_aws","AWS data-center rack",2,{owner:"Amazon",capacity:"world's largest cloud fleet",desc:"AWS operates the largest hyperscale fleet on Earth — ~33% global cloud-infra share. Custom server designs (Annapurna Labs)."});
+n("p_kuiper","Project Kuiper LEO satellite",2,{owner:"Amazon",capacity:"3,236 satellites planned",desc:"First production sats launching 2025 on ULA Vulcan + Blue Origin New Glenn."});
+n("p_trainium","AWS Trainium2",2,{owner:"Amazon",capacity:"deployments H2 2024+",desc:"Custom AI accelerator from Annapurna Labs (Amazon Israel). Fabbed at TSMC N5; HBM3."});
+
+// Meta
+n("p_quest","Meta Quest 3 / 3S",2,{owner:"Meta",capacity:"~7M units/yr",desc:"Snapdragon XR2 Gen 2 + custom silicon; LCD panels, pancake lenses."});
+n("p_rayban","Ray-Ban Meta smart glasses",2,{owner:"Meta x EssilorLuxottica",capacity:"~2M units/yr",desc:"Snapdragon AR1 chip, dual 12 MP cameras, on-device Llama-derived AI features."});
+n("p_metadc","Meta AI training cluster",2,{owner:"Meta",capacity:"~600k H100 equivalents by end-2024",desc:"Largest non-hyperscale GPU fleet. Sites in Iowa, Utah, Lulea, and a $10B Mesa AZ campus under construction."});
+n("p_mtia","Meta MTIA v2",2,{owner:"Meta",capacity:"deployed for ranking/recsys",desc:"In-house inference accelerator on TSMC 5nm; LPDDR5 in lieu of HBM."});
+
+// Nvidia
+n("p_h100","Nvidia H100 / H200 GPU",2,{owner:"Nvidia",capacity:"~3M+ units/yr",desc:"Hopper GPU; the AI training workhorse. 80B transistors; 80–141 GB HBM3e; sold ~$25–40k/unit."});
+n("p_b200","Nvidia B200 / GB200 NVL72",2,{owner:"Nvidia",capacity:"ramping 2024–25",desc:"Blackwell architecture: dual reticle-limit dies stitched via NV-HBI. 208B transistors. GB200 NVL72 ships as a liquid-cooled 72-GPU rack."});
+n("p_rtx","GeForce RTX 50 series",2,{owner:"Nvidia",capacity:"~10M+ units/yr",desc:"Consumer / workstation GPUs. Same TSMC 4N node as Hopper."});
+n("p_dgx","Nvidia DGX H100 / H200",2,{owner:"Nvidia",capacity:"AI supercomputer racks",desc:"Reference design integrating 8x H100/H200, NVSwitch, NVLink, ConnectX-7."});
+
+// Tesla
+n("p_my","Model Y",2,{owner:"Tesla",capacity:"~1.2M units/yr",desc:"Best-selling vehicle on Earth in 2023. Built at Giga Shanghai, Berlin, Texas, Fremont."});
+n("p_m3","Model 3",2,{owner:"Tesla",capacity:"~500k units/yr"});
+n("p_cyber","Cybertruck",2,{owner:"Tesla",capacity:"~50k units/yr ramping",desc:"Stainless-steel exoskeleton (cold-rolled 30X). 4680 cells in structural pack."});
+n("p_pwall","Powerwall 3",2,{owner:"Tesla",capacity:"~250k units/yr",desc:"13.5 kWh LFP home battery."});
+n("p_mega","Megapack",2,{owner:"Tesla",capacity:"~14 GWh deployed/yr",desc:"Grid-scale 3.9 MWh container. Built at Lathrop CA Megafactory + Shanghai Megafactory."});
+n("p_optimus","Tesla Optimus humanoid",2,{owner:"Tesla",capacity:"prototype, ramp 2026",desc:"28 actuators, custom AI inference; reuses Tesla EV motor + battery technology."});
+n("p_dojo","Tesla Dojo D1 training tile",2,{owner:"Tesla",capacity:"early production",desc:"Custom AI training chip on TSMC 7nm. 25 D1 tiles per training tile; 120 tiles per ExaPOD."});
+
+// product → company
+[
+ ["apple",["p_iphone","p_macbook","p_ipad","p_watch","p_airpods","p_vision"]],
+ ["msft", ["p_surface","p_xbox","p_azure","p_hololens","p_maia"]],
+ ["googl",["p_pixel","p_pbuds","p_tpu","p_waymo"]],
+ ["amzn", ["p_echo","p_kindle","p_aws","p_kuiper","p_trainium"]],
+ ["meta", ["p_quest","p_rayban","p_metadc","p_mtia"]],
+ ["nvda", ["p_h100","p_b200","p_rtx","p_dgx"]],
+ ["tsla", ["p_my","p_m3","p_cyber","p_pwall","p_mega","p_optimus","p_dojo"]],
+].forEach(([c,ps])=>ps.forEach(p=>l(c,p)));
+
+/* ----------------------------------------------------------------------------
+   TIER 3: ASSEMBLY PLANTS (the actual buildings doing final integration)
+---------------------------------------------------------------------------- */
+n("a_foxconn_zheng","Foxconn Zhengzhou (\"iPhone City\")",3,{
+  location:"Zhengzhou, Henan, China", owner:"Hon Hai Precision (Foxconn)",
+  capacity:"~500,000 iPhones/day at peak; ~50% of global iPhone supply",
+  desc:"World's largest electronics-assembly site. ~350,000 workers at peak. The Oct 2022 COVID lockdown that idled this plant cost Apple billions and accelerated India diversification.",
+  flags:["⚠ concentration","🚩 labor exposure"]
+});
+n("a_foxconn_chennai","Foxconn Chennai",3,{
+  location:"Sriperumbudur, Tamil Nadu, India", owner:"Foxconn",
+  capacity:"~20M iPhones/yr (ramping)",
+  desc:"Apple's largest non-China iPhone site. Apple's plan: 25% of iPhones from India by 2025. Tata acquired Wistron's adjacent plant in 2023."
+});
+n("a_pegatron_sh","Pegatron Shanghai",3,{
+  location:"Shanghai, China", owner:"Pegatron",
+  capacity:"~25% of iPhones (historically)",
+  desc:"Apple's #2 iPhone assembler; Luxshare bought Pegatron's Kunshan iPhone unit in 2024."
+});
+n("a_luxshare","Luxshare Kunshan",3,{
+  location:"Kunshan, Jiangsu, China", owner:"Luxshare Precision",
+  capacity:"~70% of AirPods Pro; growing share of iPhone",
+  desc:"Originally a connector maker; Apple's fastest-rising assembler. Also assembles Apple Watch and Vision Pro."
+});
+n("a_quanta_sh","Quanta Shanghai + Chongqing",3,{
+  location:"Shanghai / Chongqing, China", owner:"Quanta Computer",
+  capacity:"world's largest notebook ODM; major AI-server builder",
+  desc:"~33% of global notebooks; primary builder of MacBook + Nvidia DGX + Meta/Microsoft AI servers."
+});
+n("a_byd_sh","BYD Electronics Shenzhen",3,{
+  location:"Shenzhen, China", owner:"BYD Co.",
+  capacity:"major iPad assembler",
+  desc:"Beyond cars, BYD's electronics arm is a top Apple supplier — iPad final assembly + glass + casings."
+});
+n("a_goertek","GoerTek Weifang",3,{
+  location:"Weifang, Shandong, China; also Vietnam", owner:"GoerTek",
+  capacity:"~30% of global TWS earbuds; major VR-headset assembler",
+  desc:"Builds AirPods, Quest, Pico VR. Acoustic and MEMS specialist."
+});
+n("a_tesla_shanghai","Tesla Giga Shanghai",3,{
+  location:"Lingang, Shanghai, China", owner:"Tesla",
+  capacity:"~950k vehicles/yr (Model 3 + Y)",
+  desc:"Tesla's most productive vehicle plant. Largest auto factory in China by output. Exports to EU and Asia-Pacific.",
+  flags:["⚠ geopolitical exposure"]
+});
+n("a_tesla_berlin","Tesla Giga Berlin-Brandenburg",3,{
+  location:"Grünheide, Germany", owner:"Tesla",
+  capacity:"~500k Model Y/yr (target)",
+  desc:"European hub. Battery, drive-unit, and vehicle assembly under one roof."
+});
+n("a_tesla_texas","Tesla Giga Texas",3,{
+  location:"Austin, Texas, USA", owner:"Tesla",
+  capacity:"~250k+ Model Y + Cybertruck/yr",
+  desc:"Cybertruck home plant. 4680-cell line + structural-pack assembly. HQ since 2021."
+});
+n("a_tesla_fremont","Tesla Fremont",3,{
+  location:"Fremont, California, USA", owner:"Tesla",
+  capacity:"~600k vehicles/yr (S/X/3/Y)",
+  desc:"Original Tesla plant (former NUMMI). Sole producer of Model S and Model X."
+});
+n("a_tesla_lathrop","Tesla Megafactory Lathrop",3,{
+  location:"Lathrop, California, USA", owner:"Tesla",
+  capacity:"~40 GWh Megapack/yr",
+  desc:"Builds 3.9 MWh Megapack containers. A second Megafactory is operating in Shanghai (40 GWh/yr)."
+});
+n("a_hon_hai_houston","Foxconn Houston (Hon Hai)",3,{
+  location:"Houston, Texas, USA", owner:"Foxconn",
+  capacity:"GB200 NVL72 rack assembly",
+  desc:"Foxconn's primary U.S. AI-rack integration site for Nvidia and hyperscalers. Builds liquid-cooled racks."
+});
+n("a_wiwynn","Wiwynn Tainan + Mexico",3,{
+  location:"Tainan, Taiwan; Guadalajara, Mexico", owner:"Wiwynn (Wistron spinoff)",
+  capacity:"top-3 hyperscale-server ODM",
+  desc:"Builds AI/cloud servers for Microsoft, Meta, AWS to OCP spec. Onshoring to Mexico for U.S. hyperscalers."
+});
+n("a_inventec","Inventec Taoyuan",3,{
+  location:"Taoyuan, Taiwan", owner:"Inventec",
+  capacity:"major laptop + server ODM"
+});
+n("a_compal","Compal Kunshan",3,{
+  location:"Kunshan, China", owner:"Compal Electronics",
+  capacity:"~25% of global notebooks",
+  desc:"Apple, Lenovo, HP, Dell ODM."
+});
+n("a_magna_steyr","Magna Steyr Graz",3,{
+  location:"Graz, Austria", owner:"Magna International",
+  capacity:"contract auto assembler",
+  desc:"Builds Jaguar I-Pace, the Waymo robotaxi platform. Also Mercedes G-Class, BMW Z4."
+});
+n("a_jbil_amazon","Jabil + Foxconn (Echo, Kindle)",3,{
+  location:"various — Mexico, China, Vietnam", owner:"Jabil / Foxconn",
+  desc:"Echo and Kindle final assembly is split across Jabil, Foxconn, and Compal sites."
+});
+
+// product → assembly
+const pa = {
+ p_iphone:["a_foxconn_zheng","a_foxconn_chennai","a_pegatron_sh","a_luxshare"],
+ p_macbook:["a_quanta_sh","a_foxconn_zheng"],
+ p_ipad:["a_byd_sh","a_foxconn_zheng"],
+ p_watch:["a_luxshare","a_foxconn_zheng"],
+ p_airpods:["a_luxshare","a_goertek"],
+ p_vision:["a_luxshare"],
+ p_surface:["a_pegatron_sh","a_compal"],
+ p_xbox:["a_foxconn_zheng","a_pegatron_sh"],
+ p_azure:["a_wiwynn","a_quanta_sh","a_inventec"],
+ p_hololens:["a_compal"],
+ p_maia:["a_wiwynn","a_quanta_sh"],
+ p_pixel:["a_foxconn_chennai","a_compal"],
+ p_pbuds:["a_goertek"],
+ p_tpu:["a_quanta_sh","a_wiwynn"],
+ p_waymo:["a_magna_steyr"],
+ p_echo:["a_jbil_amazon","a_foxconn_zheng"],
+ p_kindle:["a_jbil_amazon","a_foxconn_zheng"],
+ p_aws:["a_quanta_sh","a_wiwynn","a_inventec"],
+ p_kuiper:["a_jbil_amazon"],
+ p_trainium:["a_quanta_sh"],
+ p_quest:["a_goertek"],
+ p_rayban:["a_goertek"],
+ p_metadc:["a_quanta_sh","a_wiwynn"],
+ p_mtia:["a_wiwynn"],
+ p_h100:["a_hon_hai_houston","a_quanta_sh","a_wiwynn"],
+ p_b200:["a_hon_hai_houston","a_quanta_sh"],
+ p_rtx:["a_foxconn_zheng","a_pegatron_sh"],
+ p_dgx:["a_hon_hai_houston","a_quanta_sh"],
+ p_my:["a_tesla_shanghai","a_tesla_berlin","a_tesla_texas","a_tesla_fremont"],
+ p_m3:["a_tesla_shanghai","a_tesla_fremont"],
+ p_cyber:["a_tesla_texas"],
+ p_pwall:["a_tesla_lathrop","a_tesla_shanghai"],
+ p_mega:["a_tesla_lathrop","a_tesla_shanghai"],
+ p_optimus:["a_tesla_texas","a_tesla_fremont"],
+ p_dojo:["a_tesla_texas"],
+};
+Object.entries(pa).forEach(([p,as])=>as.forEach(a=>l(p,a)));
+
+/* ----------------------------------------------------------------------------
+   TIER 4: COMPONENTS / MODULES — what the assembly plant bolts together
+---------------------------------------------------------------------------- */
+n("c_a18","Apple A18 Pro SoC",4,{desc:"Apple's flagship phone chip on TSMC N3E. ~19B transistors, hexa-core Apple-designed CPU, 16-core Neural Engine. 1 per iPhone 16 Pro."});
+n("c_m4","Apple M4 SoC",4,{desc:"3nm chip for Mac, iPad Pro, Vision Pro. 28B transistors at maximum config."});
+n("c_tensor","Google Tensor G4",4,{desc:"Pixel 9 SoC. Co-designed with Samsung LSI; manufactured by Samsung Foundry on 4LPP+."});
+n("c_h100die","H100 GPU die",4,{desc:"Single die fabricated on TSMC 4N. 814 mm² (near reticle limit). 80B transistors. Co-packaged with HBM3 on a CoWoS interposer."});
+n("c_b200die","B200 dual GPU dies",4,{desc:"Two reticle-limit 4NP dies stitched by a 10 TB/s NV-HBI link. 208B transistors total. Each B200 ships with 8 stacks of HBM3e (192 GB)."});
+n("c_tpudie","TPU v5p die",4,{desc:"Google's matrix-multiply ASIC. TSMC N5; up to 95 GB HBM3 per chip."});
+n("c_train2die","Trainium2 die",4,{desc:"AWS Annapurna Labs design. TSMC N5 with HBM3."});
+n("c_maiadie","Maia 100 die",4,{desc:"Microsoft AI accelerator. TSMC N5; HBM2e/HBM3."});
+n("c_mtiadie","MTIA v2 die",4,{desc:"Meta inference accelerator. TSMC N5; LPDDR5."});
+n("c_cowos","CoWoS interposer (TSMC)",4,{desc:"2.5D advanced-packaging substrate that bonds GPU die + HBM stacks on a silicon interposer. The single biggest bottleneck in AI-chip output through 2025.",flags:["⚠ AI bottleneck"]});
+n("c_hbm","HBM3e memory stack",4,{desc:"8-Hi or 12-Hi DRAM stacks with through-silicon vias. 24–36 GB per stack. Demand exceeds supply through 2025."});
+n("c_dram","DDR5 / LPDDR5 DRAM",4,{desc:"Main memory. ~80% of supply from Samsung + SK Hynix + Micron."});
+n("c_nand","3D NAND flash",4,{desc:"Persistent storage; 200+ layers in current generation."});
+n("c_oled","OLED display panel",4,{desc:"Used in iPhone, Pixel, Watch, top-end iPad."});
+n("c_microoled","Sony micro-OLED panel",4,{desc:"23M-pixel-per-eye displays. Used in Vision Pro, Quest Pro. Sony Atsugi/Kumamoto sole producer at scale."});
+n("c_lcd","LCD panel",4,{desc:"Kindle, Fire, low-cost laptops. BOE / AUO / Innolux."});
+n("c_imx","Sony IMX image sensor",4,{desc:"~50% of global smartphone image sensors are Sony. Pixel, iPhone, Pixel 9, Quest cameras."});
+n("c_lens","Largan camera lens module",4,{desc:"Largan Precision (Taichung) is the dominant supplier of high-end smartphone optics."});
+n("c_glass","Ceramic Shield / Gorilla Glass",4,{desc:"Aluminosilicate cover glass, fusion-drawn by Corning (Apple co-funded the Harrodsburg KY plant)."});
+n("c_chassis","Aluminum unibody chassis",4,{desc:"CNC-machined or die-cast 7000-series Al for laptops, phones, tablets."});
+n("c_pcb","HDI / SLP printed circuit board",4,{desc:"Substrate that interconnects all components. Zhen Ding, Ibiden, AT&S."});
+n("c_haptic","Linear haptic actuator",4,{desc:"\"Taptic Engine\". Voice-coil + neodymium magnet."});
+n("c_speaker","Speaker / driver",4,{desc:"Neodymium-magnet driver. AAC Technologies, GoerTek."});
+n("c_mic","MEMS microphone",4,{desc:"Knowles / Goertek silicon mics. Beam-forming array in iPhone."});
+n("c_4680","Tesla 4680 cell",4,{desc:"Tabless cylindrical cell, 46 mm × 80 mm; ~9,000 cells per Model Y structural pack. Higher energy density and faster charge than 2170."});
+n("c_2170","Panasonic 2170 cell",4,{desc:"Pre-4680 standard. Built at Panasonic Reno + Suminoe."});
+n("c_lfp","LFP prismatic cell",4,{desc:"Lithium iron phosphate. Lower energy density but no nickel/cobalt; used in standard-range Tesla, Megapack, Powerwall, Pixel-Buds peripherals. CATL + BYD dominate."});
+n("c_nmcpouch","NMC pouch cell",4,{desc:"Nickel-manganese-cobalt; high energy density. Powers iPhone, MacBook, Pixel."});
+n("c_motor","Permanent-magnet IPM motor",4,{desc:"Tesla's primary drive motor. Rotor uses NdFeB sintered magnets."});
+n("c_inverter","SiC traction inverter",4,{desc:"Silicon-carbide MOSFET module. ST Microelectronics is Tesla's lead SiC partner."});
+n("c_harness","Wiring harness",4,{desc:"Yazaki/Sumitomo manufactured; ~3 km of wire per EV. Tesla aggressively shortens via 48V architecture."});
+n("c_optic","800G optical transceiver",4,{desc:"Pluggable optics for AI fabric. InP lasers, SiGe DSP, single-mode fiber."});
+n("c_pv","Solar PV cell (sat-grade)",4,{desc:"GaAs triple-junction for satellites; multi-Si on terrestrial."});
+
+const pc = {
+ p_iphone:["c_a18","c_oled","c_imx","c_lens","c_pcb","c_chassis","c_glass","c_haptic","c_speaker","c_mic","c_nmcpouch","c_dram","c_nand"],
+ p_macbook:["c_m4","c_oled","c_pcb","c_chassis","c_speaker","c_nmcpouch","c_dram","c_nand"],
+ p_ipad:["c_m4","c_oled","c_imx","c_lens","c_pcb","c_chassis","c_glass","c_nmcpouch","c_dram","c_nand"],
+ p_watch:["c_oled","c_pcb","c_chassis","c_glass","c_nmcpouch","c_haptic","c_speaker"],
+ p_airpods:["c_pcb","c_speaker","c_mic","c_nmcpouch","c_haptic"],
+ p_vision:["c_m4","c_microoled","c_imx","c_lens","c_pcb","c_chassis","c_speaker","c_mic","c_nmcpouch","c_dram"],
+
+ p_surface:["c_oled","c_pcb","c_chassis","c_speaker","c_nmcpouch","c_dram","c_nand"],
+ p_xbox:["c_pcb","c_chassis","c_speaker","c_dram","c_nand"],
+ p_azure:["c_pcb","c_dram","c_nand","c_h100die","c_b200die","c_hbm","c_cowos","c_optic","c_maiadie"],
+ p_hololens:["c_microoled","c_imx","c_lens","c_pcb","c_speaker","c_nmcpouch","c_dram"],
+ p_maia:["c_maiadie","c_hbm","c_cowos","c_pcb"],
+
+ p_pixel:["c_tensor","c_oled","c_imx","c_lens","c_pcb","c_chassis","c_glass","c_nmcpouch","c_dram","c_nand"],
+ p_pbuds:["c_pcb","c_speaker","c_nmcpouch"],
+ p_tpu:["c_tpudie","c_hbm","c_cowos","c_pcb"],
+ p_waymo:["c_imx","c_lens","c_pcb","c_motor","c_inverter","c_lfp","c_harness"],
+
+ p_echo:["c_pcb","c_speaker","c_mic","c_dram","c_nand"],
+ p_kindle:["c_lcd","c_pcb","c_nmcpouch"],
+ p_aws:["c_pcb","c_dram","c_nand","c_h100die","c_b200die","c_hbm","c_cowos","c_optic","c_train2die"],
+ p_trainium:["c_train2die","c_hbm","c_cowos","c_pcb"],
+ p_kuiper:["c_pcb","c_pv","c_optic","c_chassis"],
+
+ p_quest:["c_microoled","c_imx","c_lens","c_pcb","c_speaker","c_nmcpouch","c_dram","c_nand"],
+ p_rayban:["c_imx","c_lens","c_pcb","c_speaker","c_nmcpouch"],
+ p_metadc:["c_pcb","c_dram","c_nand","c_h100die","c_b200die","c_hbm","c_cowos","c_optic","c_mtiadie"],
+ p_mtia:["c_mtiadie","c_dram","c_cowos","c_pcb"],
+
+ p_h100:["c_h100die","c_hbm","c_cowos","c_pcb"],
+ p_b200:["c_b200die","c_hbm","c_cowos","c_pcb"],
+ p_rtx:["c_h100die","c_dram","c_pcb"],
+ p_dgx:["c_h100die","c_b200die","c_hbm","c_cowos","c_pcb","c_optic"],
+
+ p_my:["c_4680","c_lfp","c_motor","c_inverter","c_harness","c_chassis","c_glass","c_imx","c_lens","c_pcb"],
+ p_m3:["c_lfp","c_2170","c_motor","c_inverter","c_harness","c_chassis","c_glass","c_imx","c_lens","c_pcb"],
+ p_cyber:["c_4680","c_motor","c_inverter","c_harness","c_chassis","c_glass","c_imx","c_lens","c_pcb"],
+ p_pwall:["c_lfp","c_inverter","c_pcb","c_harness"],
+ p_mega:["c_lfp","c_inverter","c_pcb","c_harness"],
+ p_optimus:["c_4680","c_motor","c_inverter","c_pcb","c_imx","c_haptic"],
+ p_dojo:["c_h100die","c_hbm","c_cowos","c_pcb","c_optic"],
+};
+Object.entries(pc).forEach(([p,cs])=>cs.forEach(c=>l(p,c)));
+
+// also link assembly→component for the "uses" relationship visible in chain
+const ac = {
+ a_foxconn_zheng:["c_a18","c_oled","c_imx","c_lens","c_chassis","c_glass","c_pcb","c_nmcpouch"],
+ a_tesla_texas:["c_4680","c_motor","c_inverter","c_chassis","c_harness"],
+ a_tesla_shanghai:["c_lfp","c_motor","c_inverter","c_chassis","c_harness"],
+ a_tesla_lathrop:["c_lfp","c_inverter","c_pcb","c_harness"],
+ a_hon_hai_houston:["c_h100die","c_b200die","c_hbm","c_cowos","c_optic"],
+ a_quanta_sh:["c_h100die","c_b200die","c_hbm","c_cowos","c_optic","c_pcb"],
+ a_luxshare:["c_a18","c_pcb","c_speaker","c_haptic","c_nmcpouch"],
+ a_goertek:["c_speaker","c_mic","c_pcb","c_nmcpouch","c_microoled"],
+};
+// (these duplicate edges are fine — they enrich the graph)
+// Object.entries(ac).forEach(([a,cs])=>cs.forEach(c=>l(a,c))); // disabled to keep the graph readable
+
+/* ----------------------------------------------------------------------------
+   TIER 5: SPECIALTY FABS / PLANTS — who actually makes the components
+---------------------------------------------------------------------------- */
+n("f_tsmc_18","TSMC Fab 18 (Tainan)",5,{
+  location:"Tainan, Taiwan", owner:"TSMC",
+  capacity:"~150,000 wafers/month at N3/N3E",
+  desc:"World's only volume foundry for 3-nanometer chips. Manufactures Apple A18 Pro, M4, and Nvidia's next-gen. ~$25B+ in cumulative capex.",
+  flags:["⚠ single-source 3nm","⚠ Taiwan Strait risk"]
+});
+n("f_tsmc_12","TSMC Fab 12 / Fab 14 / Fab 15 (Hsinchu/Tainan)",5,{
+  location:"Hsinchu Science Park + Tainan, Taiwan", owner:"TSMC",
+  capacity:"the bulk of TSMC N5/N4 capacity",
+  desc:"Where Nvidia H100, B200, AMD MI300, AWS Trainium2, Google TPU v5, Microsoft Maia, and Tesla Dojo wafers are made. The single most important fab cluster for AI."
+});
+n("f_tsmc_az","TSMC Fab 21 (Arizona)",5,{
+  location:"Phoenix, Arizona, USA", owner:"TSMC Arizona",
+  capacity:"~20k wpm N4, expanding to N3/N2",
+  desc:"$65B U.S. project. First Apple A16 chips produced here in late-2024. Strategic risk-reduction vs. Taiwan exposure."
+});
+n("f_tsmc_jasm","TSMC JASM (Kumamoto)",5,{
+  location:"Kumamoto, Japan", owner:"TSMC + Sony + Denso",
+  capacity:"~55k wpm 12/16/22/28nm",
+  desc:"Joint venture with Sony for image-sensor logic and automotive chips. Backed by ~$10B in METI subsidies."
+});
+n("f_tsmc_advanced","TSMC AP6 / AP7 (Taichung)",5,{
+  location:"Taichung, Taiwan", owner:"TSMC",
+  capacity:"~32k CoWoS wafers/month (target end-2025)",
+  desc:"Advanced packaging: CoWoS (chip-on-wafer-on-substrate), the bottleneck step that bonds GPU dies to HBM stacks. Doubling capacity 2024→2025 still cannot meet AI demand.",
+  flags:["⚠ AI chokepoint"]
+});
+n("f_samsung_pyong","Samsung Foundry / Memory — Pyeongtaek",5,{
+  location:"Pyeongtaek, South Korea", owner:"Samsung Electronics",
+  capacity:"world's largest semiconductor campus",
+  desc:"3nm foundry for Tensor G4; HBM3e + DDR5 + 3D NAND production. ~6 fab phases (P1–P6)."
+});
+n("f_samsung_hwa","Samsung Hwaseong / Giheung",5,{
+  location:"Hwaseong + Giheung, South Korea", owner:"Samsung",
+  desc:"Legacy and leading-edge memory + EUV logic; Hwaseong houses Samsung's V1 EUV-only line."
+});
+n("f_skhynix_m16","SK Hynix M16 (Icheon)",5,{
+  location:"Icheon, South Korea", owner:"SK Hynix",
+  capacity:"primary HBM3e site",
+  desc:"Sole supplier of HBM3e to Nvidia for 2024 H200 / B200 ramp. SK Hynix holds ~50% of HBM market.",
+  flags:["⚠ AI chokepoint"]
+});
+n("f_skhynix_m15","SK Hynix M15 (Cheongju)",5,{
+  location:"Cheongju, South Korea", owner:"SK Hynix",
+  desc:"3D NAND + DDR5 DRAM."
+});
+n("f_micron_taichung","Micron Fab 16 (Taichung)",5,{
+  location:"Taichung, Taiwan", owner:"Micron",
+  desc:"DDR5, LPDDR5, HBM3e."
+});
+n("f_micron_boise","Micron Boise (HBM Expansion)",5,{
+  location:"Boise, Idaho, USA", owner:"Micron",
+  desc:"$15B U.S. memory fab; HBM volume from 2025+."
+});
+n("f_sony_kumamoto","Sony Kumamoto (image sensors)",5,{
+  location:"Kumamoto, Japan", owner:"Sony Semiconductor Solutions",
+  desc:"World's largest CMOS-image-sensor fab. Supplies iPhone, Pixel, Quest, Vision Pro cameras."
+});
+n("f_lgd_paju","LG Display Paju P10",5,{
+  location:"Paju, South Korea", owner:"LG Display",
+  desc:"OLED panels for iPhone, iPad, MacBook (Apple ramping LG share)."
+});
+n("f_sd_asan","Samsung Display Asan / Tangjeong",5,{
+  location:"Asan, South Korea", owner:"Samsung Display",
+  desc:"Largest OLED maker; dominant in iPhone."
+});
+n("f_boe_b9","BOE B9 (Chengdu) / B11 (Mianyang)",5,{
+  location:"Sichuan, China", owner:"BOE",
+  desc:"Ramping Apple OLED supply; volume LCD for iPad / Kindle / Echo Show."
+});
+n("f_largan","Largan Taichung",5,{
+  location:"Taichung, Taiwan", owner:"Largan Precision",
+  desc:"World's #1 high-end smartphone optics. Hyper-precise multi-element plastic lenses for iPhone, Pixel."
+});
+n("f_corning","Corning Harrodsburg",5,{
+  location:"Harrodsburg, Kentucky, USA", owner:"Corning Inc.",
+  desc:"Fusion-drawn aluminosilicate cover glass (Gorilla Glass + Apple Ceramic Shield). Apple's $200M Advanced Manufacturing Fund grant funded this plant.",
+  flags:["⚠ Apple-anchored"]
+});
+n("f_asml","ASML Veldhoven",5,{
+  location:"Veldhoven, Netherlands", owner:"ASML",
+  capacity:"~50–60 EUV scanners/yr",
+  desc:"Sole producer of EUV lithography. Without ASML, no fab can make chips ≤7 nm. Each EUV machine ~$200M; Twinscan EXE high-NA is ~$380M.",
+  flags:["⚠ true monopoly"]
+});
+n("f_amat","Applied Materials Santa Clara",5,{
+  location:"Santa Clara, California, USA", owner:"Applied Materials",
+  desc:"World's largest semiconductor-equipment maker (deposition, etch, CMP, ion implant)."
+});
+n("f_lam","Lam Research Fremont",5,{
+  location:"Fremont, California, USA", owner:"Lam Research",
+  desc:"Leader in plasma etch + atomic-layer deposition."
+});
+n("f_tel","Tokyo Electron",5,{
+  location:"Tokyo + Yamanashi, Japan", owner:"TEL",
+  desc:"Coater/developer + etch tools."
+});
+n("f_kla","KLA Milpitas",5,{
+  location:"Milpitas, California, USA", owner:"KLA Corp.",
+  desc:"Process-control inspection & metrology — near-monopoly."
+});
+n("f_shinetsu","Shin-Etsu Shirakawa",5,{
+  location:"Shirakawa, Japan", owner:"Shin-Etsu Chemical",
+  desc:"~30% of world's 300mm silicon wafers; supplies every leading-edge fab."
+});
+n("f_sumco","SUMCO Yokkaichi",5,{
+  location:"Yokkaichi, Japan", owner:"SUMCO Corp.",
+  desc:"~25% of global 300mm wafer supply."
+});
+n("f_wolfspeed","Wolfspeed Mohawk Valley",5,{
+  location:"Marcy, New York, USA", owner:"Wolfspeed",
+  desc:"World's first 200mm SiC-on-SiC fab. Powers next-gen Tesla / GM / Ford EV inverters."
+});
+n("f_catl_ningde","CATL Ningde HQ Plant",5,{
+  location:"Ningde, Fujian, China", owner:"Contemporary Amperex Technology",
+  capacity:"flagship LFP + NMC cell plant",
+  desc:"CATL is the world's #1 EV-battery maker (~37% global share). Supplies Tesla, Ford, GM, BMW, Mercedes."
+});
+n("f_catl_yibin","CATL Yibin",5,{
+  location:"Yibin, Sichuan, China", owner:"CATL",
+  desc:"World's largest battery factory by area."
+});
+n("f_panasonic_reno","Panasonic Reno (Giga Nevada cohabitant)",5,{
+  location:"Sparks, Nevada, USA", owner:"Panasonic Energy",
+  desc:"Original 2170 cells for Tesla. 39 GWh nameplate. Co-located inside Tesla Giga Nevada."
+});
+n("f_panasonic_osaka","Panasonic Suminoe (Osaka)",5,{
+  location:"Suminoe, Osaka, Japan", owner:"Panasonic Energy",
+  desc:"4680 pilot for Tesla; high-quality NCA chemistry."
+});
+n("f_lges_wroclaw","LG Energy Wroclaw",5,{
+  location:"Wroclaw, Poland", owner:"LG Energy Solution",
+  desc:"Largest battery plant in Europe. Supplies VW, Stellantis, Hyundai, and pouch cells used in Apple."
+});
+n("f_byd_shenzhen","BYD Shenzhen Pingshan",5,{
+  location:"Shenzhen, China", owner:"BYD",
+  desc:"Inventor of the Blade LFP cell. Supplies Tesla Model Y RWD (China + Europe), VW, Toyota."
+});
+n("f_atl_ningde","ATL Ningde",5,{
+  location:"Ningde, China", owner:"ATL (Amperex) — TDK subsidiary",
+  desc:"Lithium-polymer cells for iPhone, MacBook, Apple Watch, Pixel. Spawn-parent of CATL."
+});
+n("f_tesla_4680","Tesla Giga Nevada / Texas 4680 lines",5,{
+  location:"Sparks, NV + Austin, TX, USA", owner:"Tesla",
+  desc:"In-house 4680 cell production. Tesla's vertical-integration play."
+});
+n("f_samsungsdi","Samsung SDI Cheonan / Ulsan",5,{
+  location:"South Korea", owner:"Samsung SDI",
+  desc:"Cylindrical + prismatic + pouch cells; supplies Stellantis, BMW, and Apple components."
+});
+n("f_zhen_ding","Zhen Ding Tech (PCB)",5,{
+  location:"Shenzhen + Taiwan", owner:"Zhen Ding Tech",
+  desc:"Largest HDI/SLP PCB maker for Apple."
+});
+n("f_ibiden","Ibiden Ogaki",5,{
+  location:"Ogaki, Japan", owner:"Ibiden",
+  desc:"Substrate + PCB for Intel/Nvidia/Apple."
+});
+
+// component → fab
+const cf = {
+ c_a18:["f_tsmc_18"],
+ c_m4:["f_tsmc_18"],
+ c_h100die:["f_tsmc_12"],
+ c_b200die:["f_tsmc_12"],
+ c_tpudie:["f_tsmc_12"],
+ c_train2die:["f_tsmc_12"],
+ c_maiadie:["f_tsmc_12"],
+ c_mtiadie:["f_tsmc_12"],
+ c_tensor:["f_samsung_pyong","f_samsung_hwa"],
+ c_cowos:["f_tsmc_advanced"],
+ c_hbm:["f_skhynix_m16","f_samsung_pyong","f_micron_taichung","f_micron_boise"],
+ c_dram:["f_skhynix_m15","f_samsung_pyong","f_micron_taichung","f_micron_boise"],
+ c_nand:["f_skhynix_m15","f_samsung_pyong","f_micron_taichung"],
+ c_oled:["f_lgd_paju","f_sd_asan","f_boe_b9"],
+ c_microoled:["f_sony_kumamoto"],
+ c_lcd:["f_boe_b9"],
+ c_imx:["f_sony_kumamoto"],
+ c_lens:["f_largan"],
+ c_glass:["f_corning"],
+ c_chassis:["f_byd_shenzhen"], // BYD also does Apple casings
+ c_pcb:["f_zhen_ding","f_ibiden"],
+ c_4680:["f_tesla_4680","f_panasonic_osaka"],
+ c_2170:["f_panasonic_reno"],
+ c_lfp:["f_catl_ningde","f_catl_yibin","f_byd_shenzhen"],
+ c_nmcpouch:["f_atl_ningde","f_lges_wroclaw","f_samsungsdi"],
+ c_motor:["f_byd_shenzhen"],
+ c_inverter:["f_wolfspeed"],
+ c_optic:["f_samsung_pyong","f_skhynix_m15"],
+ c_pv:["f_samsung_hwa"],
+};
+Object.entries(cf).forEach(([c,fs])=>fs.forEach(f=>l(c,f)));
+
+// fabs depend on equipment makers + wafer suppliers — these horizontal links matter
+[["f_tsmc_18","f_asml"],["f_tsmc_12","f_asml"],["f_tsmc_az","f_asml"],
+ ["f_samsung_pyong","f_asml"],["f_skhynix_m16","f_asml"],["f_micron_taichung","f_asml"],
+ ["f_tsmc_18","f_amat"],["f_tsmc_12","f_amat"],["f_tsmc_18","f_lam"],["f_tsmc_12","f_lam"],
+ ["f_tsmc_18","f_tel"],["f_tsmc_18","f_kla"],["f_tsmc_12","f_kla"],
+ ["f_tsmc_18","f_shinetsu"],["f_tsmc_18","f_sumco"],
+ ["f_tsmc_12","f_shinetsu"],["f_tsmc_12","f_sumco"],
+ ["f_samsung_pyong","f_shinetsu"],["f_skhynix_m16","f_sumco"]
+].forEach(([a,b])=>l(a,b));
+
+/* ----------------------------------------------------------------------------
+   TIER 6: REFINED MATERIALS — what gets fed into the fabs/cell-makers
+---------------------------------------------------------------------------- */
+n("m_polysi","Electronic-grade polysilicon (11N)",6,{desc:"99.999999999% pure silicon. The starting feedstock for every silicon wafer. Wacker (Germany), Hemlock (USA), GCL (China)."});
+n("m_wafer","300mm silicon wafer",6,{desc:"Polished single-crystal Si disc. Shin-Etsu + SUMCO produce ~55% of world supply."});
+n("m_lihydroxide","Lithium hydroxide (battery-grade)",6,{desc:"Preferred salt for high-nickel cathodes. Ganfeng + Albemarle + Tianqi dominate."});
+n("m_licarb","Lithium carbonate (battery-grade)",6,{desc:"For LFP cathodes; from brine evaporation or spodumene conversion."});
+n("m_cobalt","Cobalt sulfate",6,{desc:"~80% refined in China (Huayou, GEM)."});
+n("m_nickel","Class-1 nickel sulfate",6,{desc:"Battery-grade, ≥99.9% Ni. Tsingshan IMIP transformed market by converting Indonesian laterite to battery grade via HPAL."});
+n("m_graphite","Battery-grade graphite (synthetic + spheronized)",6,{desc:"Anode active material. ~70% from China; U.S. just imposed 25% tariff Jan 2026."});
+n("m_copper","Refined copper cathode",6,{desc:"~22 Mt/yr global production."});
+n("m_alum","Aluminum ingot",6,{desc:"Smelted from alumina, which is refined from bauxite."});
+n("m_gold","Refined gold",6,{desc:"~7g per laptop, ~0.034g per smartphone (in bonding wires + connectors)."});
+n("m_tin","Refined tin",6,{desc:"Used as solder. Indonesia + Malaysia + China lead refining."});
+n("m_tantalum","Refined tantalum",6,{desc:"Capacitors. Listed as 3T conflict mineral under Dodd-Frank §1502."});
+n("m_tungsten","Refined tungsten (3T)",6,{desc:"Vibration motors, drill bits. ~80% from China refineries."});
+n("m_ndpr","NdPr metal",6,{desc:"Light rare-earth metal mix used in NdFeB magnets."});
+n("m_dy","Dysprosium / Terbium oxides",6,{desc:"Heavy rare earths added to NdFeB magnets for high-temp operation. ~99% refined in China."});
+n("m_gallium","Refined gallium",6,{desc:"Byproduct of bauxite-to-alumina. ~98% refined in China; export-controlled by Beijing since Aug 2023.",flags:["⚠ Chinese export control"]});
+n("m_indium","Refined indium",6,{desc:"For ITO touchscreens + InP lasers. China dominant, with Korean recovery from zinc smelters."});
+n("m_glass_mat","Aluminosilicate glass blank",6,{desc:"Special composition glass; fusion-drawn at Corning."});
+n("m_lfpcam","LFP cathode powder (LiFePO4)",6,{desc:"~95% produced in China (BTR, Dynanonic, Hunan Yuneng)."});
+n("m_nmccam","NMC cathode powder",6,{desc:"Co-precipitation of Ni-Mn-Co with lithium hydroxide. Umicore (Belgium), Posco Future M (Korea)."});
+n("m_separator","Polyethylene separator film",6,{desc:"Thin (~10 μm) microporous film. Asahi Kasei + SK ie technology + Toray."});
+n("m_electrolyte","Battery electrolyte (LiPF6)",6,{desc:"Fluorine-based salt in carbonate solvents. Mitsubishi Chem, Capchem, Tinci."});
+n("m_phos","Iron-phosphate intermediate",6,{desc:"Pre-cursor to LFP cathode."});
+n("m_sicwafer","Silicon-carbide wafer",6,{desc:"For EV inverters + RF; Wolfspeed/Coherent dominate the 200mm transition."});
+n("m_iron","Iron ore / steel",6,{desc:"Vehicle bodies (Cybertruck stainless), data-center rebar, server chassis."});
+
+// fab → material
+const fm = {
+ f_tsmc_18:["m_wafer","m_copper","m_gold"],
+ f_tsmc_12:["m_wafer","m_copper","m_gold"],
+ f_tsmc_az:["m_wafer","m_copper","m_gold"],
+ f_tsmc_jasm:["m_wafer","m_copper"],
+ f_tsmc_advanced:["m_wafer","m_copper"],
+ f_samsung_pyong:["m_wafer","m_copper","m_gold"],
+ f_samsung_hwa:["m_wafer","m_copper"],
+ f_skhynix_m16:["m_wafer","m_copper"],
+ f_skhynix_m15:["m_wafer","m_copper"],
+ f_micron_taichung:["m_wafer","m_copper"],
+ f_micron_boise:["m_wafer","m_copper"],
+ f_sony_kumamoto:["m_wafer","m_copper"],
+ f_lgd_paju:["m_glass_mat","m_indium","m_copper"],
+ f_sd_asan:["m_glass_mat","m_indium","m_copper"],
+ f_boe_b9:["m_glass_mat","m_indium"],
+ f_largan:["m_glass_mat"],
+ f_corning:["m_glass_mat"],
+ f_shinetsu:["m_polysi"],
+ f_sumco:["m_polysi"],
+ f_wolfspeed:["m_sicwafer"],
+ f_zhen_ding:["m_copper","m_gold","m_tin","m_tantalum"],
+ f_ibiden:["m_copper","m_gold","m_tin"],
+ f_catl_ningde:["m_lihydroxide","m_licarb","m_lfpcam","m_nmccam","m_graphite","m_separator","m_electrolyte","m_copper","m_alum","m_iron"],
+ f_catl_yibin:["m_lihydroxide","m_licarb","m_lfpcam","m_graphite","m_separator","m_electrolyte"],
+ f_byd_shenzhen:["m_lihydroxide","m_lfpcam","m_graphite","m_separator","m_electrolyte","m_iron","m_alum"],
+ f_atl_ningde:["m_lihydroxide","m_nmccam","m_cobalt","m_nickel","m_graphite","m_copper"],
+ f_lges_wroclaw:["m_lihydroxide","m_nmccam","m_cobalt","m_nickel","m_graphite"],
+ f_panasonic_reno:["m_lihydroxide","m_nmccam","m_cobalt","m_nickel","m_graphite"],
+ f_panasonic_osaka:["m_lihydroxide","m_nmccam","m_nickel","m_graphite"],
+ f_tesla_4680:["m_lihydroxide","m_nmccam","m_nickel","m_graphite","m_copper","m_alum"],
+ f_samsungsdi:["m_lihydroxide","m_nmccam","m_cobalt","m_nickel","m_graphite"],
+};
+Object.entries(fm).forEach(([f,ms])=>ms.forEach(m=>l(f,m)));
+
+// component → material direct (for non-fab components like motor magnets)
+const cmDirect = {
+ c_motor:["m_ndpr","m_dy","m_copper","m_iron"],
+ c_haptic:["m_ndpr","m_dy","m_copper"],
+ c_speaker:["m_ndpr","m_copper"],
+ c_chassis:["m_alum"],
+ c_harness:["m_copper"],
+ c_inverter:["m_sicwafer","m_copper"],
+ c_optic:["m_indium","m_gallium","m_gold"],
+ c_pv:["m_polysi","m_gallium","m_alum"],
+ c_glass:["m_glass_mat"],
+ c_lfp:["m_lihydroxide","m_lfpcam","m_phos","m_graphite","m_separator","m_electrolyte","m_copper","m_alum"],
+ c_4680:["m_lihydroxide","m_nmccam","m_nickel","m_graphite","m_separator","m_electrolyte","m_copper","m_alum"],
+ c_2170:["m_lihydroxide","m_nmccam","m_cobalt","m_nickel","m_graphite","m_copper","m_alum"],
+ c_nmcpouch:["m_lihydroxide","m_nmccam","m_cobalt","m_nickel","m_graphite","m_copper","m_alum"],
+ c_pcb:["m_copper","m_gold","m_tin","m_tantalum"],
+};
+Object.entries(cmDirect).forEach(([c,ms])=>ms.forEach(m=>l(c,m)));
+
+/* ----------------------------------------------------------------------------
+   TIER 7: REFINERIES / SMELTERS / PROCESSORS
+---------------------------------------------------------------------------- */
+n("r_wacker","Wacker Burghausen + Charleston (polysilicon)",7,{
+  location:"Burghausen, Germany; Charleston, TN, USA", owner:"Wacker Chemie",
+  desc:"World's largest electronic-grade polysilicon producer. Supplies global wafer industry."
+});
+n("r_hemlock","Hemlock Semiconductor",7,{
+  location:"Hemlock, Michigan, USA", owner:"Hemlock Semi (DowCorning + Shin-Etsu)",
+  desc:"Top U.S. polysilicon producer; major supplier to Shin-Etsu and SUMCO."
+});
+n("r_gcl","GCL-Poly Xinjiang + Sichuan",7,{
+  location:"Xinjiang + Sichuan, China", owner:"GCL Group",
+  desc:"World's largest polysilicon producer (mostly solar grade). Subject to UFLPA restrictions in U.S.",
+  flags:["🚩 UFLPA risk"]
+});
+n("r_ganfeng_xinyu","Ganfeng Lithium Xinyu",7,{
+  location:"Xinyu, Jiangxi, China", owner:"Ganfeng Lithium",
+  desc:"World's largest lithium-hydroxide refinery. Apple, Tesla, BMW long-term supply contracts."
+});
+n("r_tianqi_suining","Tianqi Lithium Suining",7,{
+  location:"Suining, Sichuan, China", owner:"Tianqi Lithium",
+  desc:"Co-owns Greenbushes mine; converts spodumene to LiOH/Li2CO3."
+});
+n("r_albemarle_kemerton","Albemarle Kemerton",7,{
+  location:"Kemerton, Western Australia", owner:"Albemarle",
+  desc:"Lithium hydroxide conversion — the West's largest non-China LiOH plant."
+});
+n("r_sqm_atacama","SQM Salar de Atacama",7,{
+  location:"Salar de Atacama, Chile", owner:"SQM (Sociedad Química y Minera)",
+  desc:"Operates solar-evaporation ponds + on-site lithium-carbonate plant."
+});
+n("r_huayou","Huayou Cobalt Quzhou",7,{
+  location:"Quzhou, Zhejiang, China", owner:"Zhejiang Huayou Cobalt",
+  desc:"World's #1 cobalt-sulfate refiner; integrates DRC mines + Indonesia HPAL."
+});
+n("r_glencore_kolwezi","Glencore Kamoto Copper Smelter",7,{
+  location:"Kolwezi, DRC", owner:"Glencore",
+  desc:"Smelter co-located with Kamoto Mutanda mines."
+});
+n("r_tsingshan_imip","Tsingshan IMIP Morowali Park",7,{
+  location:"Morowali, Sulawesi, Indonesia", owner:"Tsingshan Holdings + partners",
+  desc:"Largest nickel industrial park on Earth. RKEF + HPAL converts laterite to battery-grade nickel sulfate. Transformed the global Ni market in 2018–2024.",
+  flags:["🚩 ESG concerns"]
+});
+n("r_vale_long","Vale Long Harbour",7,{
+  location:"Long Harbour, Newfoundland, Canada", owner:"Vale",
+  desc:"Class-1 nickel-sulfate refinery; Tesla offtake."
+});
+n("r_codelco_ventanas","Codelco Ventanas Smelter",7,{
+  location:"Quintero Bay, Chile", owner:"Codelco",
+  desc:"Copper smelter; Codelco is the world's largest copper producer."
+});
+n("r_chalco","Chalco Yunnan + Shandong",7,{
+  location:"Yunnan + Shandong, China", owner:"Aluminum Corp. of China (Chalco)",
+  desc:"World's largest aluminum producer; smelts alumina to ingot."
+});
+n("r_riotinto_pa","Rio Tinto Pacific Aluminium",7,{
+  location:"Boyne, Tomago, NZAS — Australia/NZ", owner:"Rio Tinto",
+  desc:"Smelters tied to Weipa bauxite + Gladstone alumina refineries."
+});
+n("r_lynas_kuantan","Lynas Kuantan",7,{
+  location:"Kuantan, Malaysia", owner:"Lynas Rare Earths",
+  desc:"Largest rare-earth processing plant outside China. Inputs from Mt Weld."
+});
+n("r_mp_fortworth","MP Materials Fort Worth",7,{
+  location:"Fort Worth, Texas, USA", owner:"MP Materials",
+  desc:"Stage-3 NdPr metal + magnet plant. GM offtake; first U.S. NdFeB-magnet producer at scale."
+});
+n("r_shenghe","Shenghe Resources",7,{
+  location:"Sichuan + Inner Mongolia, China", owner:"Shenghe Resources",
+  desc:"Major REE refiner; tolling partner with MP Materials until U.S.-China decoupling."
+});
+n("r_btr","BTR New Energy",7,{
+  location:"Tianjin + Shenzhen, China", owner:"BTR",
+  desc:"World's #1 anode-material maker (graphite + silicon-carbon)."
+});
+n("r_posco","POSCO Future M Pohang",7,{
+  location:"Pohang, South Korea", owner:"POSCO",
+  desc:"NCM cathode + graphite anode; supplies LG ES, Samsung SDI."
+});
+n("r_umicore","Umicore Hoboken + Kokkola",7,{
+  location:"Hoboken, Belgium + Kokkola, Finland", owner:"Umicore",
+  desc:"Recycling-rich cathode-material + cobalt refinery."
+});
+n("r_solvay","Solvay Spéciale Mining",7,{
+  location:"La Rochelle, France", owner:"Solvay",
+  desc:"Rare-earth recycling and high-purity oxides."
+});
+n("r_china_tin","Yunnan Tin",7,{
+  location:"Gejiu, Yunnan, China", owner:"Yunnan Tin Co.",
+  desc:"World's largest tin smelter."
+});
+n("r_china_w","China Tungsten Group",7,{
+  location:"Jiangxi, China", owner:"China Tungsten & Hightech",
+  desc:"World's largest tungsten refiner."
+});
+n("r_global_phos","OCP Khouribga",7,{
+  location:"Khouribga, Morocco", owner:"OCP Group",
+  desc:"World's largest phosphate-rock producer — feeds LFP-cathode chain."
+});
+
+// material → refinery
+const mr = {
+ m_polysi:["r_wacker","r_hemlock","r_gcl"],
+ m_wafer:["r_wacker","r_hemlock"], // wafers come from polysilicon producers indirectly
+ m_lihydroxide:["r_ganfeng_xinyu","r_tianqi_suining","r_albemarle_kemerton"],
+ m_licarb:["r_ganfeng_xinyu","r_tianqi_suining","r_sqm_atacama","r_albemarle_kemerton"],
+ m_cobalt:["r_huayou","r_umicore","r_glencore_kolwezi"],
+ m_nickel:["r_tsingshan_imip","r_vale_long","r_huayou"],
+ m_graphite:["r_btr","r_posco"],
+ m_copper:["r_codelco_ventanas","r_glencore_kolwezi"],
+ m_alum:["r_chalco","r_riotinto_pa"],
+ m_gold:["r_umicore"],
+ m_tin:["r_china_tin"],
+ m_tantalum:["r_umicore"],
+ m_tungsten:["r_china_w"],
+ m_ndpr:["r_lynas_kuantan","r_mp_fortworth","r_shenghe","r_solvay"],
+ m_dy:["r_lynas_kuantan","r_shenghe","r_solvay"],
+ m_gallium:["r_chalco"],
+ m_indium:["r_umicore","r_codelco_ventanas"],
+ m_glass_mat:["r_wacker"], // approx — glass uses different feedstock chain but link to a chemical major
+ m_lfpcam:["r_btr","r_posco"],
+ m_nmccam:["r_umicore","r_posco"],
+ m_separator:["r_posco"],
+ m_electrolyte:["r_posco"],
+ m_phos:["r_global_phos"],
+ m_sicwafer:["r_wacker"], // SiC growth via Wolfspeed but feedstock partner abstracted
+ m_iron:["r_codelco_ventanas"], // rough abstraction — iron flows separately in real chain
+};
+Object.entries(mr).forEach(([m,rs])=>rs.forEach(r=>l(m,r)));
+
+/* ----------------------------------------------------------------------------
+   TIER 8: MINES / RAW SOURCES — where atoms first leave the earth
+---------------------------------------------------------------------------- */
+n("o_greenbushes","Greenbushes Lithium Mine",8,{
+  location:"Greenbushes, Western Australia", owner:"Talison Lithium (IGO + Tianqi + Albemarle)",
+  capacity:"~1.6 Mt spodumene/yr (~50% of world hard-rock lithium)",
+  desc:"World's largest hard-rock lithium operation. Highest-grade spodumene on Earth."
+});
+n("o_pilbara","Pilgangoora & Wodgina (Pilbara)",8,{
+  location:"Pilbara, Western Australia", owner:"Pilbara Minerals; Mineral Resources + Albemarle",
+  desc:"Second-largest hard-rock lithium region globally."
+});
+n("o_atacama","Salar de Atacama Brine",8,{
+  location:"Antofagasta, Chile", owner:"SQM + Albemarle (state-controlled lease)",
+  capacity:"~30% of global lithium (low-cost brine)",
+  desc:"Driest desert; solar evaporation ponds concentrate Li-rich brine over 12–18 months."
+});
+n("o_hombre","Salar del Hombre Muerto",8,{
+  location:"Catamarca, Argentina", owner:"Arcadium Lithium (Livent)",
+  desc:"Long-running Argentine brine operation. Argentina is part of the lithium triangle."
+});
+n("o_thacker","Thacker Pass",8,{
+  location:"Humboldt County, Nevada, USA", owner:"Lithium Americas (GM equity)",
+  desc:"Largest known lithium reserve in the U.S. Construction underway 2024–25."
+});
+n("o_kamoto","Kamoto / Mutanda Cu-Co Mine",8,{
+  location:"Kolwezi, Lualaba Province, DRC", owner:"Glencore (Katanga + KCC)",
+  capacity:"~25 kt/yr cobalt + 285 kt/yr copper",
+  desc:"Among the largest cobalt operations on Earth.",
+  flags:["🚩 DRC artisanal-mining concerns"]
+});
+n("o_tenke","Tenke Fungurume",8,{
+  location:"Lualaba Province, DRC", owner:"CMOC (China Molybdenum) + Lundin",
+  desc:"Massive Cu-Co operation; CMOC overtook Glencore as world's #1 cobalt producer in 2023."
+});
+n("o_morowali","Morowali Nickel Laterite",8,{
+  location:"Sulawesi, Indonesia", owner:"Tsingshan + Eramet + IMIP partners",
+  desc:"Indonesia produces ~50% of global nickel; mines feed adjacent HPAL/RKEF plants in IMIP/IWIP industrial parks.",
+  flags:["🚩 deforestation concerns"]
+});
+n("o_goro","Goro Nickel",8,{
+  location:"New Caledonia, France", owner:"Prony Resources + Tesla (offtake)",
+  desc:"High-purity nickel for batteries. Direct Tesla offtake."
+});
+n("o_norilsk","Norilsk Nickel",8,{
+  location:"Norilsk, Russia", owner:"Norilsk Nickel",
+  desc:"~10% of global nickel + 40% of global palladium. Sanctions-affected.",
+  flags:["⚠ sanctions exposure"]
+});
+n("o_escondida","Escondida Copper",8,{
+  location:"Antofagasta Region, Chile", owner:"BHP (operator) + Rio Tinto + JECO",
+  capacity:"~1.0 Mt/yr Cu — world's largest single copper mine",
+  desc:"Single largest copper mine on Earth."
+});
+n("o_chuqui","Chuquicamata",8,{
+  location:"Calama, Chile", owner:"Codelco (state-owned)",
+  desc:"Second-largest copper mine; underground transition completed 2019."
+});
+n("o_kamoa","Kamoa-Kakula",8,{
+  location:"Lualaba, DRC", owner:"Ivanhoe Mines + Zijin + DRC government",
+  desc:"Fastest-growing major copper basin; targets 600 kt/yr by 2026."
+});
+n("o_boke","Boké Bauxite",8,{
+  location:"Boké, Guinea", owner:"CBG (Halco) + SMB-Winning",
+  desc:"~25% of global bauxite. Feeds China's alumina + aluminum chain."
+});
+n("o_weipa","Weipa Bauxite",8,{
+  location:"Cape York, Queensland, Australia", owner:"Rio Tinto",
+  desc:"Australia's largest bauxite operation."
+});
+n("o_pilbara_iron","Pilbara Iron Ore",8,{
+  location:"Pilbara, Western Australia", owner:"Rio Tinto + BHP + FMG",
+  desc:"~40% of global seaborne iron ore. Feeds China's steel industry → Cybertruck stainless."
+});
+n("o_carajas","Carajás",8,{
+  location:"Pará, Brazil", owner:"Vale",
+  desc:"Highest-grade iron ore on Earth; ~150 Mt/yr."
+});
+n("o_bayan_obo","Bayan Obo Rare-Earth + Iron Mine",8,{
+  location:"Inner Mongolia, China", owner:"Baotou Steel + China Northern Rare Earth",
+  desc:"World's largest rare-earth deposit; ~38% of global REE production. Refining concentrated downstream in Chinese refineries.",
+  flags:["⚠ Chinese choke","🚩 radioactive tailings"]
+});
+n("o_mountain_pass","Mountain Pass",8,{
+  location:"San Bernardino County, California, USA", owner:"MP Materials",
+  desc:"Only operating rare-earth mine in the United States. ~15% of global REE production."
+});
+n("o_mt_weld","Mt Weld",8,{
+  location:"Western Australia", owner:"Lynas Rare Earths",
+  desc:"World's highest-grade rare-earth deposit (~9.7% TREO). Feeds Lynas Kuantan."
+});
+n("o_spruce","Spruce Pine Quartz Mines",8,{
+  location:"Spruce Pine, North Carolina, USA", owner:"Sibelco + The Quartz Corp",
+  desc:"World's only meaningful source of ultra-high-purity quartz used to grow silicon ingots and EUV photomask blanks. ~$200M of dust runs the global chip industry.",
+  flags:["⚠ true single-source"]
+});
+n("o_bangka","Bangka-Belitung Tin",8,{
+  location:"Indonesia", owner:"PT Timah + private miners",
+  desc:"Largest tin source globally."
+});
+n("o_cerro","Cerro Rico (San Rafael)",8,{
+  location:"Potosí, Bolivia", owner:"Minsur + cooperatives",
+  desc:"Cassiterite tin from a 500-year-old mountain."
+});
+n("o_drc_coltan","Eastern DRC Coltan",8,{
+  location:"North Kivu / South Kivu, DRC", owner:"artisanal + ITSCI-tagged cooperatives",
+  desc:"Tantalum-niobium ore. Ground-zero of conflict-mineral discourse; iTSCi traceability scheme.",
+  flags:["🚩 conflict mineral"]
+});
+n("o_jiangxi_w","Jiangxi Tungsten",8,{
+  location:"Jiangxi, China", owner:"various Chinese SOEs",
+  desc:"~80% of world tungsten."
+});
+n("o_heilong_g","Heilongjiang Graphite",8,{
+  location:"Heilongjiang, China", owner:"BTR + Putailai",
+  desc:"~70% of natural flake graphite."
+});
+n("o_carlin","Carlin Trend Gold",8,{
+  location:"Nevada, USA", owner:"Nevada Gold Mines (Barrick + Newmont)",
+  desc:"Largest U.S. gold operation."
+});
+n("o_witwater","Witwatersrand Basin",8,{
+  location:"Gauteng, South Africa", owner:"Sibanye-Stillwater + Harmony + AngloGold",
+  desc:"Largest gold deposit ever discovered; 50%+ of all gold ever mined."
+});
+n("o_khouribga","Khouribga Phosphate",8,{
+  location:"Khouribga, Morocco", owner:"OCP Group",
+  desc:"World's largest phosphate-rock reserves — ~70% of global supply."
+});
+
+// refinery → mine
+const rm = {
+ r_wacker:["o_spruce"],
+ r_hemlock:["o_spruce"],
+ r_gcl:["o_spruce"],
+ r_ganfeng_xinyu:["o_greenbushes","o_pilbara","o_thacker"],
+ r_tianqi_suining:["o_greenbushes","o_atacama"],
+ r_albemarle_kemerton:["o_greenbushes","o_pilbara"],
+ r_sqm_atacama:["o_atacama","o_hombre"],
+ r_huayou:["o_kamoto","o_tenke","o_morowali"],
+ r_glencore_kolwezi:["o_kamoto"],
+ r_tsingshan_imip:["o_morowali"],
+ r_vale_long:["o_goro","o_norilsk"],
+ r_codelco_ventanas:["o_chuqui","o_escondida","o_kamoa"],
+ r_chalco:["o_boke","o_weipa"],
+ r_riotinto_pa:["o_weipa"],
+ r_lynas_kuantan:["o_mt_weld"],
+ r_mp_fortworth:["o_mountain_pass"],
+ r_shenghe:["o_bayan_obo"],
+ r_btr:["o_heilong_g"],
+ r_posco:["o_heilong_g"],
+ r_umicore:["o_kamoto","o_drc_coltan","o_norilsk","o_carlin"],
+ r_solvay:["o_bayan_obo"],
+ r_china_tin:["o_bangka","o_cerro"],
+ r_china_w:["o_jiangxi_w"],
+ r_global_phos:["o_khouribga"],
+};
+Object.entries(rm).forEach(([r,os])=>os.forEach(o=>l(r,o)));
+
+// And a few direct material → mine flows for materials sourced raw (rare cases)
+[["m_iron","o_pilbara_iron"],["m_iron","o_carajas"],["m_gold","o_carlin"],["m_gold","o_witwater"]]
+  .forEach(([a,b])=>l(a,b));
+
+/* ============================================================================
+   RENDER
+   ============================================================================ */
+const svg = d3.select("#graph");
+const W = ()=> svg.node().clientWidth;
+const H = ()=> svg.node().clientHeight;
+
+// Build defs for arrowhead
+const defs = svg.append("defs");
+defs.append("marker").attr("id","arr").attr("viewBox","0 -5 10 10")
+  .attr("refX",10).attr("refY",0).attr("markerWidth",6).attr("markerHeight",6)
+  .attr("orient","auto").append("path").attr("d","M0,-5L10,0L0,5").attr("fill","#3a4b73").attr("opacity",.6);
+defs.append("marker").attr("id","arr-hot").attr("viewBox","0 -5 10 10")
+  .attr("refX",10).attr("refY",0).attr("markerWidth",7).attr("markerHeight",7)
+  .attr("orient","auto").append("path").attr("d","M0,-5L10,0L0,5").attr("fill","#7cc4ff");
+
+// tier band labels behind everything
+const bg = svg.append("g").attr("class","bands");
+const root = svg.append("g");
+
+const tip = d3.select("#tip");
+const detail = d3.select("#detail");
+const banner = d3.select("#banner");
+
+const zoom = d3.zoom().scaleExtent([0.15,4]).on("zoom", e=>{
+  root.attr("transform", e.transform);
+  bg.attr("transform", e.transform);
+});
+svg.call(zoom);
+
+// adjacency
+const adj = {}; N.forEach(d=>adj[d.id]={out:new Set(),in:new Set()});
+L.forEach(e=>{ if(adj[e.source]&&adj[e.target]){ adj[e.source].out.add(e.target); adj[e.target].in.add(e.source); }});
+
+// initial positions: tier x + spread y
+function seedY(){
+  const bins = {1:[],2:[],3:[],4:[],5:[],6:[],7:[],8:[]};
+  N.forEach(d=>bins[d.tier].push(d));
+  Object.entries(bins).forEach(([t,arr])=>{
+    const span = Math.max(800, arr.length*42);
+    arr.forEach((d,i)=>{
+      d.x = tiers[t].x + (Math.random()-0.5)*60;
+      d.y = -span/2 + (i+0.5)*(span/arr.length);
+    });
+  });
+}
+seedY();
+
+// tier band labels
+Object.entries(tiers).forEach(([k,v])=>{
+  bg.append("rect").attr("class","tier-bg")
+    .attr("x", v.x-130).attr("y",-2200).attr("width",260).attr("height",4400);
+  bg.append("text").attr("class","tier-label")
+    .attr("x",v.x).attr("y",-2080).text(`Tier ${k} · ${v.name}`);
+});
+
+const sim = d3.forceSimulation(N)
+ .force("link", d3.forceLink(L).id(d=>d.id).distance(80).strength(0.18))
+ .force("charge", d3.forceManyBody().strength(-130))
+ .force("collide", d3.forceCollide().radius(d=>tiers[d.tier].r+5))
+ .force("x", d3.forceX(d=>tiers[d.tier].x).strength(0.85))
+ .force("y", d3.forceY(0).strength(0.04))
+ .alpha(1).alphaDecay(0.025);
+
+const link = root.append("g").attr("class","links")
+ .selectAll("path").data(L).join("path").attr("class","link")
+ .attr("marker-end","url(#arr)").attr("stroke-width",1);
+
+const node = root.append("g").attr("class","nodes")
+ .selectAll("g").data(N).join("g").attr("class","node")
+ .call(d3.drag()
+   .on("start",(e,d)=>{ if(!e.active) sim.alphaTarget(0.2).restart(); d.fx=d.x; d.fy=d.y;})
+   .on("drag",(e,d)=>{ d.fx=e.x; d.fy=e.y;})
+   .on("end",(e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null;}))
+ .on("mouseenter",(e,d)=>{
+    tip.style("opacity",1).html(
+      `<strong>${d.label}</strong><br>
+       <span style="color:#9aa7c2">${tiers[d.tier].name}</span>
+       ${d.location?`<br><span style="color:#9aa7c2">${d.location}</span>`:""}
+       ${d.capacity?`<br>${d.capacity}`:""}
+       ${d.flags?`<br>${d.flags.map(f=>`<span style="color:#ff9aa2">${f}</span>`).join(" ")}`:""}`);
+ })
+ .on("mousemove",(e)=>{
+    const r = svg.node().getBoundingClientRect();
+    tip.style("left",(e.clientX-r.left+12)+"px").style("top",(e.clientY-r.top+12)+"px");
+ })
+ .on("mouseleave",()=>tip.style("opacity",0))
+ .on("click",(e,d)=>{ e.stopPropagation(); focus(d); });
+
+node.append("circle").attr("r", d=>tiers[d.tier].r).attr("fill", d=>tiers[d.tier].color);
+
+// flag markers (small icons on chokepoint nodes)
+node.filter(d=>d.flags && d.flags.length).append("text")
+  .attr("text-anchor","middle").attr("dy","-12").attr("font-size","10")
+  .text("⚠").attr("fill","#ff9aa2");
+
+node.append("text").attr("class","node-label")
+ .attr("text-anchor","middle").attr("dy", d=>tiers[d.tier].r+11)
+ .text(d=>d.label.length>30?d.label.slice(0,29)+"…":d.label);
+
+sim.on("tick",()=>{
+  link.attr("d",d=>{
+    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+    const dr = Math.sqrt(dx*dx + dy*dy)*1.4;
+    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+  });
+  node.attr("transform",d=>`translate(${d.x},${d.y})`);
+});
+
+setTimeout(fit, 1500);
+
+function fit(){
+  const b = root.node().getBBox();
+  const w = W(), h = H();
+  const k = Math.min(w/(b.width+120), h/(b.height+120), 0.55);
+  const t = d3.zoomIdentity.translate(w/2 - (b.x+b.width/2)*k, h/2 - (b.y+b.height/2)*k).scale(k);
+  svg.transition().duration(900).call(zoom.transform, t);
+}
+
+/* ----- focus / highlight chain ----- */
+function chainFrom(id){
+  const keep = new Set([id]);
+  const upStack = [id], downStack = [id];
+  while(upStack.length){ const x = upStack.pop(); adj[x].in.forEach(p=>{ if(!keep.has(p)){keep.add(p); upStack.push(p);} }); }
+  while(downStack.length){ const x = downStack.pop(); adj[x].out.forEach(c=>{ if(!keep.has(c)){keep.add(c); downStack.push(c);} }); }
+  return keep;
+}
+
+function focus(d){
+  const keep = chainFrom(d.id);
+  node.classed("dim", n=>!keep.has(n.id));
+  link.classed("dim", e=>!(keep.has(e.source.id) && keep.has(e.target.id)))
+      .classed("hot", e=>keep.has(e.source.id) && keep.has(e.target.id))
+      .attr("marker-end", e=>(keep.has(e.source.id) && keep.has(e.target.id)) ? "url(#arr-hot)" : "url(#arr)");
+  renderDetail(d, keep);
+  banner.style("display","block").text(`Focused: ${d.label} — ${keep.size} nodes in chain`);
+}
+
+function clearFocus(){
+  node.classed("dim",false);
+  link.classed("dim",false).classed("hot",false).attr("marker-end","url(#arr)");
+  detail.html(`<div class="empty">Click any node to see its full story:<br>what it is, who owns it, capacity, where it sits in the chain, and every Mag 7 product it ultimately reaches.</div>`);
+  banner.style("display","none");
+  document.querySelectorAll(".companies button").forEach(x=>x.classList.remove("active"));
+}
+svg.on("click", clearFocus);
+
+/* ----- detail panel ----- */
+function renderDetail(d, keep){
+  const out = [...adj[d.id].out].map(id=>N.find(n=>n.id===id));
+  const inn = [...adj[d.id].in].map(id=>N.find(n=>n.id===id));
+
+  const tierCounts = {1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0};
+  keep.forEach(id=>{ tierCounts[N.find(n=>n.id===id).tier]++; });
+
+  // walk to companies (upward) and resources (downward) for the chain summary
+  const ancestors = new Set([d.id]); { const s=[d.id]; while(s.length){const x=s.pop(); adj[x].in.forEach(p=>{if(!ancestors.has(p)){ancestors.add(p);s.push(p);}});} }
+  const descendants = new Set([d.id]); { const s=[d.id]; while(s.length){const x=s.pop(); adj[x].out.forEach(p=>{if(!descendants.has(p)){descendants.add(p);s.push(p);}});} }
+  const cosUp = [...ancestors].map(id=>N.find(n=>n.id===id)).filter(n=>n.tier===1);
+  const minesDown = [...descendants].map(id=>N.find(n=>n.id===id)).filter(n=>n.tier===8);
+
+  const flagBadges = (d.flags||[]).map(f=>`<span class="tag warn">${f}</span>`).join("");
+
+  const html = `
+    <h3>${d.label}</h3>
+    <div>
+      <span class="tag" style="background:${tiers[d.tier].color}26;color:${tiers[d.tier].color}">${tiers[d.tier].name}</span>
+      ${d.owner?`<span class="tag">${d.owner}</span>`:""}
+      ${d.hq?`<span class="tag">HQ: ${d.hq}</span>`:""}
+      ${flagBadges}
+    </div>
+    ${d.location?`<div class="kv"><div class="k">Location</div><div class="v">${d.location}</div></div>`:""}
+    ${d.capacity?`<div class="kv"><div class="k">Capacity</div><div class="v">${d.capacity}</div></div>`:""}
+    ${d.desc?`<p>${d.desc}</p>`:""}
+    ${d.notes?`<p style="color:#9aa7c2;font-style:italic">${d.notes}</p>`:""}
+
+    <div class="breadcrumb">
+      <strong>Chain (${keep.size} nodes):</strong>
+      🏢 ${tierCounts[1]} co · 📦 ${tierCounts[2]} prod · 🏭 ${tierCounts[3]} assy ·
+      🔩 ${tierCounts[4]} comp · 🔬 ${tierCounts[5]} fab · ⚗️ ${tierCounts[6]} mat ·
+      🏗️ ${tierCounts[7]} ref · ⛏️ ${tierCounts[8]} mine
+    </div>
+
+    ${cosUp.length?`<h2>Ends up in (Mag 7)</h2>
+      <ul class="links-list">${cosUp.map(c=>`<li data-id="${c.id}"><span>${c.label}</span><span class="arrow">company ↑</span></li>`).join("")}</ul>`:""}
+
+    ${minesDown.length?`<h2>Ultimately sourced from</h2>
+      <ul class="links-list">${minesDown.map(c=>`<li data-id="${c.id}"><span>${c.label}</span><span class="arrow">mine ↓</span></li>`).join("")}</ul>`:""}
+
+    ${out.length?`<h2>Direct downstream (one step toward raw)</h2>
+      <ul class="links-list">${out.map(x=>`<li data-id="${x.id}"><span><span class="dot" style="display:inline-block;background:${tiers[x.tier].color};margin-right:6px"></span>${x.label}</span><span class="arrow">${tiers[x.tier].name}</span></li>`).join("")}</ul>`:""}
+
+    ${inn.length?`<h2>Direct upstream (one step toward product)</h2>
+      <ul class="links-list">${inn.map(x=>`<li data-id="${x.id}"><span><span class="dot" style="display:inline-block;background:${tiers[x.tier].color};margin-right:6px"></span>${x.label}</span><span class="arrow">${tiers[x.tier].name}</span></li>`).join("")}</ul>`:""}
+  `;
+  detail.html(html);
+  detail.selectAll(".links-list li").on("click", function(){
+    const id = this.getAttribute("data-id");
+    const target = N.find(n=>n.id===id);
+    focus(target);
+    svg.transition().duration(500).call(zoom.translateTo, target.x, target.y);
+  });
+}
+
+/* ----- left panel widgets ----- */
+const legendEl = document.getElementById("legend");
+Object.entries(tiers).forEach(([k,v])=>{
+  const el = document.createElement("label");
+  el.innerHTML = `<input type="checkbox" data-tier="${k}" checked><span class="dot" style="background:${v.color}"></span> Tier ${k}: ${v.name}`;
+  legendEl.appendChild(el);
+});
+legendEl.addEventListener("change",()=>{
+  const visible = new Set();
+  document.querySelectorAll("#legend input").forEach(i=>{ if(i.checked) visible.add(+i.dataset.tier); });
+  node.style("display", d=>visible.has(d.tier)?null:"none");
+  link.style("display", e=>(visible.has(e.source.tier) && visible.has(e.target.tier))?null:"none");
+});
+
+const companiesEl = document.getElementById("companies");
+N.filter(n=>n.tier===1).forEach(c=>{
+  const b = document.createElement("button");
+  b.innerHTML = `<span class="swatch"></span> ${c.label}`;
+  b.onclick = ()=>{
+    document.querySelectorAll(".companies button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    focus(c);
+    svg.transition().duration(700).call(zoom.translateTo, c.x, c.y);
+  };
+  companiesEl.appendChild(b);
+});
+
+// Chokepoint quick-jumps
+const chokeIds = ["f_asml","f_tsmc_advanced","f_tsmc_18","f_skhynix_m16","o_spruce","o_bayan_obo","r_tsingshan_imip","f_corning","a_foxconn_zheng","o_kamoto"];
+const chokesEl = document.getElementById("chokes");
+chokeIds.forEach(id=>{
+  const x = N.find(n=>n.id===id); if(!x) return;
+  const el = document.createElement("label");
+  el.style.cursor="pointer";
+  el.innerHTML = `<span class="dot" style="background:${tiers[x.tier].color}"></span> ${x.label}`;
+  el.onclick = ()=>{ focus(x); svg.transition().duration(700).call(zoom.translateTo, x.x, x.y); };
+  chokesEl.appendChild(el);
+});
+
+document.getElementById("search").addEventListener("input", e=>{
+  const q = e.target.value.trim().toLowerCase();
+  if(!q){ clearFocus(); return; }
+  const hit = N.find(n=>n.label.toLowerCase().includes(q)) ||
+              N.find(n=>(n.location||"").toLowerCase().includes(q)) ||
+              N.find(n=>(n.owner||"").toLowerCase().includes(q));
+  if(hit){ focus(hit); svg.transition().duration(500).call(zoom.translateTo, hit.x, hit.y); }
+});
+
+document.getElementById("resetBtn").onclick = ()=>{ clearFocus(); document.getElementById("search").value=""; fit(); };
+document.getElementById("clearBtn").onclick = clearFocus;
+document.getElementById("fitBtn").onclick = fit;
+document.getElementById("zoomIn").onclick = ()=>svg.transition().duration(300).call(zoom.scaleBy, 1.4);
+document.getElementById("zoomOut").onclick = ()=>svg.transition().duration(300).call(zoom.scaleBy, 0.7);
+
+</script>
+</body>
+</html>
