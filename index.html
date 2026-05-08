@@ -165,14 +165,14 @@
    TIERS  (8 tiers, left → right)
    ============================================================================ */
 const tiers = {
-  1:{name:"Company",         color:"#ff5b6e", r:22, x:-1500},
-  2:{name:"Product/Service", color:"#ff8a4d", r:13, x:-1100},
-  3:{name:"Assembly Plant",  color:"#ffb74d", r:11, x:-700},
-  4:{name:"Component / Module", color:"#ffe26a", r:10, x:-300},
-  5:{name:"Specialty Fab / Plant", color:"#a8e26a", r:11, x:100},
-  6:{name:"Refined Material",color:"#7ad17a", r:9,  x:500},
-  7:{name:"Refinery / Smelter", color:"#5fc7c4", r:10, x:900},
-  8:{name:"Mine / Raw Source", color:"#7cc4ff", r:12, x:1300},
+  1:{name:"Company",         color:"#ff5b6e", r:18, x:-840},
+  2:{name:"Product/Service", color:"#ff8a4d", r:11, x:-600},
+  3:{name:"Assembly Plant",  color:"#ffb74d", r:10, x:-360},
+  4:{name:"Component / Module", color:"#ffe26a", r:9,  x:-120},
+  5:{name:"Specialty Fab / Plant", color:"#a8e26a", r:10, x:120},
+  6:{name:"Refined Material",color:"#7ad17a", r:8,  x:360},
+  7:{name:"Refinery / Smelter", color:"#5fc7c4", r:9,  x:600},
+  8:{name:"Mine / Raw Source", color:"#7cc4ff", r:11, x:840},
 };
 
 /* ============================================================================
@@ -1990,9 +1990,10 @@ function seedY(){
   const bins = {1:[],2:[],3:[],4:[],5:[],6:[],7:[],8:[]};
   N.forEach(d=>bins[d.tier].push(d));
   Object.entries(bins).forEach(([t,arr])=>{
-    const span = Math.max(1200, arr.length*38);
+    // Tighter initial vertical packing — was Math.max(1200, n*38), now n*22 capped at 1100
+    const span = Math.min(1100, Math.max(600, arr.length*22));
     arr.forEach((d,i)=>{
-      d.x = tiers[t].x + (Math.random()-0.5)*60;
+      d.x = tiers[t].x + (Math.random()-0.5)*40;
       d.y = -span/2 + (i+0.5)*(span/arr.length);
     });
   });
@@ -2000,17 +2001,17 @@ function seedY(){
 seedY();
 
 Object.entries(tiers).forEach(([k,v])=>{
-  bg.append("rect").attr("class","tier-bg").attr("x", v.x-150).attr("y",-2800).attr("width",300).attr("height",5600);
-  bg.append("text").attr("class","tier-label").attr("x",v.x).attr("y",-2620).text(`Tier ${k} · ${v.name}`);
+  bg.append("rect").attr("class","tier-bg").attr("x", v.x-100).attr("y",-1400).attr("width",200).attr("height",2800);
+  bg.append("text").attr("class","tier-label").attr("x",v.x).attr("y",-1310).text(`Tier ${k} · ${v.name}`);
 });
 
 const sim = d3.forceSimulation(N)
- .force("link", d3.forceLink(L).id(d=>d.id).distance(70).strength(0.12))
- .force("charge", d3.forceManyBody().strength(-110))
- .force("collide", d3.forceCollide().radius(d=>tiers[d.tier].r+5))
- .force("x", d3.forceX(d=>tiers[d.tier].x).strength(0.85))
- .force("y", d3.forceY(0).strength(0.03))
- .alpha(1).alphaDecay(0.022);
+ .force("link", d3.forceLink(L).id(d=>d.id).distance(40).strength(0.08))
+ .force("charge", d3.forceManyBody().strength(-55))
+ .force("collide", d3.forceCollide().radius(d=>tiers[d.tier].r+3))
+ .force("x", d3.forceX(d=>tiers[d.tier].x).strength(0.95))
+ .force("y", d3.forceY(0).strength(0.12))
+ .alpha(1).alphaDecay(0.025);
 
 const link = root.append("g").attr("class","links")
  .selectAll("path").data(L).join("path").attr("class","link")
@@ -2056,12 +2057,16 @@ sim.on("tick",()=>{
   node.attr("transform",d=>`translate(${d.x},${d.y})`);
 });
 
-setTimeout(fit, 1800);
+// Multiple fit calls: early so something appears, again after the sim settles
+setTimeout(fit, 600);
+setTimeout(fit, 2200);
+setTimeout(fit, 4000);
 
 function fit(){
   const b = root.node().getBBox();
   const w = W(), h = H();
-  const k = Math.min(w/(b.width+150), h/(b.height+150), 0.45);
+  // Cap raised so nodes are readable at default zoom; allow up to 0.9
+  const k = Math.min(w/(b.width+100), h/(b.height+100), 0.9);
   const t = d3.zoomIdentity.translate(w/2 - (b.x+b.width/2)*k, h/2 - (b.y+b.height/2)*k).scale(k);
   svg.transition().duration(900).call(zoom.transform, t);
 }
